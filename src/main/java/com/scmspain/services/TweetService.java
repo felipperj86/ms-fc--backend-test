@@ -1,68 +1,61 @@
 package com.scmspain.services;
 
-import com.scmspain.entities.Tweet;
+import com.scmspain.jpa.TweetRepository;
+import com.scmspain.jpa.entities.Tweet;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.metrics.writer.Delta;
 import org.springframework.boot.actuate.metrics.writer.MetricWriter;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.domain.Specifications;
 import org.springframework.stereotype.Service;
 
 import javax.persistence.EntityManager;
 import javax.persistence.TypedQuery;
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.CriteriaQuery;
+import javax.persistence.criteria.Root;
 import javax.transaction.Transactional;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 @Service
 @Transactional
 public class TweetService {
-    private EntityManager entityManager;
     private MetricWriter metricWriter;
+    private TweetRepository repository;
+    private TweetValidator validator = new TweetValidator();
 
-    public TweetService(EntityManager entityManager, MetricWriter metricWriter) {
-        this.entityManager = entityManager;
+    @Autowired
+    public TweetService(
+            MetricWriter metricWriter,
+            TweetRepository repository
+    ) {
         this.metricWriter = metricWriter;
+        this.repository = repository;
     }
 
-    /**
-      Push tweet to repository
-      Parameter - publisher - creator of the Tweet
-      Parameter - text - Content of the Tweet
-      Result - recovered Tweet
-    */
     public void publishTweet(String publisher, String text) {
-        if (publisher != null && publisher.length() > 0 && text != null && text.length() > 0 && text.length() < 140) {
-            Tweet tweet = new Tweet();
-            tweet.setTweet(text);
-            tweet.setPublisher(publisher);
-
+            Tweet tweet = new Tweet(publisher, text);
+            validator.validate(tweet);
             this.metricWriter.increment(new Delta<Number>("published-tweets", 1));
-            this.entityManager.persist(tweet);
-        } else {
-            throw new IllegalArgumentException("Tweet must not be greater than 140 characters");
-        }
+            this.repository.save(tweet);
     }
 
-    /**
-      Recover tweet from repository
-      Parameter - id - id of the Tweet to retrieve
-      Result - retrieved Tweet
-    */
-    public Tweet getTweet(Long id) {
-      return this.entityManager.find(Tweet.class, id);
-    }
-
-    /**
-      Recover tweet from repository
-      Parameter - id - id of the Tweet to retrieve
-      Result - retrieved Tweet
-    */
     public List<Tweet> listAllTweets() {
-        List<Tweet> result = new ArrayList<Tweet>();
         this.metricWriter.increment(new Delta<Number>("times-queried-tweets", 1));
-        TypedQuery<Long> query = this.entityManager.createQuery("SELECT id FROM Tweet AS tweetId WHERE pre2015MigrationStatus<>99 ORDER BY id DESC", Long.class);
-        List<Long> ids = query.getResultList();
-        for (Long id : ids) {
-            result.add(getTweet(id));
-        }
-        return result;
+        return repository.findByDiscardedDateIsNullAndPre2015MigrationStatusNotOrderByCreateDateDesc(99L);
+    }
+
+    public void discardATweet(Long tweetId){
+        Tweet tweetToDiscard = this.repository.findOne(tweetId);
+        if (tweetToDiscard == null) throw new IllegalArgumentException("Tweet id doesn't exist.");
+        tweetToDiscard.setDiscardedDate(LocalDateTime.now());
+        this.repository.save(tweetToDiscard);
+    }
+
+    public List<Tweet> listAllDiscardedTweets(){
+        return repository.findByDiscardedDateIsNotNullOrderByDiscardedDateDesc();
     }
 }

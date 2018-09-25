@@ -43,7 +43,7 @@ public class TweetControllerTest {
 
     @Test
     public void shouldReturn400WhenInsertingAnInvalidTweet() throws Exception {
-        mockMvc.perform(newTweet("Schibsted Spain", "We are Schibsted Spain (look at our home page http://www.schibsted.es/), we own Vibbo, InfoJobs, fotocasa, coches.net and milanuncios. Welcome!"))
+        mockMvc.perform(newTweet("Schibsted Spain", "We are Schibsted Spain (look at our home page http://www.schibsted.es/), we own Vibbo, InfoJobs, fotocasa, habitaclia, coches.net and milanuncios. We are ready to give you the best experience. Welcome!"))
                 .andExpect(status().is(400));
     }
 
@@ -60,10 +60,46 @@ public class TweetControllerTest {
         assertThat(new ObjectMapper().readValue(content, List.class).size()).isEqualTo(1);
     }
 
+    @Test
+    public void shouldReturn200WhenDiscaringAValidTweet() throws Exception {
+        mockMvc.perform(newDiscardTweet(1l))
+                .andExpect(status().is(200));
+    }
+
+    @Test
+    public void shouldReturn400WhenDiscaringAnInvalidTweet() throws Exception {
+        mockMvc.perform(newDiscardTweet(999l))
+                .andExpect(status().is(400));
+    }
+
+
+    @Test
+    public void shouldReturnAllDiscardedTweets() throws Exception {
+        mockMvc.perform(newTweet("Yo", "How are you?"))
+                .andExpect(status().is(201));
+
+        mockMvc.perform(newDiscardTweet(1L))
+                .andExpect(status().is(200));
+
+        MvcResult getResult = mockMvc.perform(get("/discarded"))
+                .andExpect(status().is(200))
+                .andReturn();
+
+        String content = getResult.getResponse().getContentAsString();
+        assertThat(new ObjectMapper().readValue(content, List.class).size()).isEqualTo(1);
+    }
+
+
     private MockHttpServletRequestBuilder newTweet(String publisher, String tweet) {
         return post("/tweet")
                 .contentType(MediaType.APPLICATION_JSON_UTF8)
                 .content(format("{\"publisher\": \"%s\", \"tweet\": \"%s\"}", publisher, tweet));
+    }
+
+    private MockHttpServletRequestBuilder newDiscardTweet(Long tweetId) {
+        return post("/discarded")
+                .contentType(MediaType.APPLICATION_JSON_UTF8)
+                .content(format("{\"tweet\": %o}", tweetId));
     }
 
 }
